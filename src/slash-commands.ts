@@ -9,6 +9,7 @@ import {
 import { config } from './config.js';
 import {
   clearChannelModelOverride,
+  clearPendingMessages,
   getChannel,
   registerChannel,
   setChannelModelOverride,
@@ -28,6 +29,8 @@ import {
   computeEffectiveChannelSettings,
   getDesiredThinkingLevel,
 } from './channel-settings.js';
+import { isChannelProcessing } from './queue.js';
+import { rotateChannelSessionDir } from './session-path.js';
 import type { RegisteredChannel } from './types.js';
 
 const PI_COMMAND = new SlashCommandBuilder()
@@ -73,6 +76,11 @@ const PI_COMMAND = new SlashCommandBuilder()
             { name: 'xhigh', value: 'xhigh' },
           ),
       ),
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName('new')
+      .setDescription('Start a fresh pi session for this channel'),
   );
 
 export async function registerGlobalCommands(client: Client<true>): Promise<void> {
@@ -100,6 +108,7 @@ export async function handleChatCommand(interaction: ChatInputCommandInteraction
   const subcommand = interaction.options.getSubcommand();
 
   try {
+
     switch (subcommand) {
       case 'status':
         await handleStatus(interaction);
@@ -113,11 +122,14 @@ export async function handleChatCommand(interaction: ChatInputCommandInteraction
       case 'thinking':
         await handleThinkingSet(interaction);
         return;
+      case 'new':
+        await handleNew(interaction);
+        return;
       default:
         await interaction.reply(reply(`Unknown subcommand: ${subcommand}`, interaction));
     }
   } catch (err: any) {
-    logger.error({ err: err.message, subcommand }, 'Slash command failed');
+    logger.error({ err: err.message, command: interaction.commandName, subcommand }, 'Slash command failed');
     const payload = reply(`⚠️ ${err.message}`, interaction);
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp(payload);
@@ -125,6 +137,37 @@ export async function handleChatCommand(interaction: ChatInputCommandInteraction
       await interaction.reply(payload);
     }
   }
+}
+
+async function handleNew(interaction: ChatInputCommandInteraction): Promise<void> {
+  const channel = ensureManagedChannel(interaction);
+  if (!channel) {
+    await interaction.reply(reply(notRegisteredMessage(), interaction));
+    return;
+  }
+
+  if (isChannelProcessing(channel.jid)) {
+    await interaction.reply(reply(
+      'This channel is currently processing a message. Wait for it to finish, then run /new again.',
+      interaction,
+    ));
+    return;
+  }
+
+  const cleared = clearPendingMessages(channel.jid);
+  const archivedSession = rotateChannelSessionDir(channel.folder);
+
+  logger.info({ jid: channel.jid, cleared, archived: Boolean(archivedSession) }, 'Channel session reset');
+
+  const notes = ['Started a fresh session for this channel.'];
+  if (cleared > 0) {
+    notes.push(`Cleared ${cleared} queued ${cleared === 1 ? 'message' : 'messages'}.`);
+  }
+  if (archivedSession) {
+    notes.push('Archived the previous session on disk.');
+  }
+
+  await interaction.reply(reply(notes.join('\n'), interaction));
 }
 
 async function handleStatus(interaction: ChatInputCommandInteraction): Promise<void> {

@@ -22,7 +22,7 @@ Discord ──discord.js──→ Gateway ──pi subprocess──→ Pi Agent
 - **Message splitting** — handles Discord's 2000-character limit
 - **Attachments & replies** — attachment placeholders and reply context forwarded to pi
 - **CLI channel management** — register/unregister channels from the command line
-- **Global slash commands** — `/pi status`, `/pi model`, `/pi reset-model`, `/pi thinking`
+- **Global slash commands** — `/pi status`, `/pi model`, `/pi reset-model`, `/pi thinking`, `/pi new`
 - **Model autocomplete** — slash command model picker is populated from pi's currently available models
 - **Thinking fallback** — `xhigh` automatically falls back to `high` on models that don't support it
 
@@ -87,7 +87,7 @@ npm run dev   # run with tsx (no build needed)
 
 ## Slash Commands
 
-The gateway registers a global `/pi` command on startup.
+The gateway registers the global `/pi` command on startup.
 
 ### `/pi status`
 Show the effective model/thinking settings for the current channel.
@@ -105,6 +105,12 @@ Set the current channel's thinking level.
 - Choices: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`
 - If the selected model does not support `xhigh`, the gateway stores `high` instead
 - If the selected model does not support reasoning at all, the gateway stores `off`
+
+### `/pi new`
+Start a fresh pi session for the current channel.
+- Clears any still-pending queued messages for that channel before the next response
+- Rotates the previous session directory on disk when one exists, instead of deleting it
+- Refuses to run while the channel is actively processing a message
 
 > Global Discord slash commands can take a little time to propagate after the bot starts or after updates.
 

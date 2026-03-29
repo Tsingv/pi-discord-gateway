@@ -174,6 +174,11 @@ export function markMessageFailed(rowid: number): void {
   db.prepare("update message_queue set status = 'failed', processed_at = datetime('now') where rowid = ?").run(rowid);
 }
 
+export function clearPendingMessages(channelJid: string): number {
+  const result = db.prepare("delete from message_queue where channel_jid = ? and status = 'pending'").run(channelJid);
+  return result.changes;
+}
+
 export function countPendingMessages(): number {
   const row = db.prepare("select count(*) as cnt from message_queue where status = 'pending'").get() as any;
   return row.cnt;

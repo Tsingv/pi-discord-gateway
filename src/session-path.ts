@@ -1,4 +1,5 @@
-import { isAbsolute, relative, resolve } from 'node:path';
+import { existsSync, renameSync } from 'node:fs';
+import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
 import { config } from './config.js';
 
 /**
@@ -38,4 +39,27 @@ export function resolveChannelSessionDir(folder: string): string {
   }
 
   return sessionDir;
+}
+
+/** Rotate a channel session directory out of the active path without deleting it. */
+export function rotateChannelSessionDir(folder: string): string | undefined {
+  const sessionDir = resolveChannelSessionDir(folder);
+  if (!existsSync(sessionDir)) {
+    return undefined;
+  }
+
+  const parentDir = dirname(sessionDir);
+  const sessionName = basename(sessionDir);
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+
+  let archiveDir = resolve(parentDir, `${sessionName}__archived_${stamp}`);
+  let suffix = 1;
+
+  while (existsSync(archiveDir)) {
+    archiveDir = resolve(parentDir, `${sessionName}__archived_${stamp}_${suffix}`);
+    suffix += 1;
+  }
+
+  renameSync(sessionDir, archiveDir);
+  return archiveDir;
 }

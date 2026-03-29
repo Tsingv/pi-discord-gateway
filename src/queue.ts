@@ -26,6 +26,10 @@ const activeChannels = new Set<string>();
 let running = false;
 let activeTasks = 0;
 
+export function isChannelProcessing(jid: string): boolean {
+  return activeChannels.has(jid);
+}
+
 export function startProcessingLoop(): void {
   running = true;
 
