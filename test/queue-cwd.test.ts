@@ -65,17 +65,32 @@ describe('queue cwd selection', () => {
       responseCount: 2,
       invokeImpl: async (_folder, _prompt, opts) => {
         opts?.onProgress?.({
+          kind: 'agent_start',
+          label: 'pi started processing',
+        });
+        opts?.onProgress?.({
+          kind: 'turn_start',
+          label: 'pi is thinking',
+        });
+        opts?.onProgress?.({
           kind: 'tool_start',
           label: 'running tool: bash (npm test)',
           toolName: 'bash',
           toolCallId: 'tool-1',
+        });
+        opts?.onProgress?.({
+          kind: 'tool_end',
+          label: 'tool finished: bash',
+          toolName: 'bash',
+          toolCallId: 'tool-1',
+          isError: false,
         });
         return { ok: true, text: 'done' };
       },
     });
 
     expect(sendResponseMock.mock.calls.map((call) => call[1])).toEqual([
-      '[pi progress] running tool: bash (npm test)',
+      '🛠️ running tool: bash (npm test)',
       'done',
     ]);
   });

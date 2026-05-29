@@ -341,7 +341,54 @@ function createAgentProgressReporter(
 }
 
 function formatAgentProgressMessage(event: AgentProgressEvent): string {
-  return `[pi progress] ${truncateProgressLabel(event.label, 300)}`;
+  if (event.kind === 'agent_start' || event.kind === 'turn_start') {
+    return '';
+  }
+
+  if (event.kind === 'tool_end' && !event.isError) {
+    return '';
+  }
+
+  return `${progressIcon(event)} ${truncateProgressLabel(event.label, 300)}`;
+}
+
+function progressIcon(event: AgentProgressEvent): string {
+  if (event.isError || /rate limit|quota|overloaded|retry/i.test(event.label)) {
+    return '⚠️';
+  }
+
+  switch (event.kind) {
+    case 'tool_start':
+      return toolProgressIcon(event.toolName);
+    case 'tool_end':
+      return '✅';
+    case 'compaction_start':
+      return '🧠';
+    case 'compaction_end':
+      return '✅';
+    case 'auto_retry_start':
+    case 'auto_retry_end':
+      return '⚠️';
+    default:
+      return '🔄';
+  }
+}
+
+function toolProgressIcon(toolName: string | undefined): string {
+  switch (toolName?.toLowerCase()) {
+    case 'bash':
+      return '🛠️';
+    case 'read':
+    case 'grep':
+    case 'find':
+    case 'ls':
+      return '🔎';
+    case 'edit':
+    case 'write':
+      return '📝';
+    default:
+      return '🔧';
+  }
 }
 
 function truncateProgressLabel(label: string, maxLength: number): string {
@@ -362,7 +409,7 @@ function createTypingLoop(jid: string): { stop: () => Promise<void> } {
       await setTyping(jid);
       if (!typingAlive) break;
 
-      const delay = cancellableSleep(8000);
+      const delay = cancellableSleep(4000);
       cancelTypingDelay = delay.cancel;
       await delay.promise;
       cancelTypingDelay = () => {};
