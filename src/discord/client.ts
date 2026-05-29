@@ -224,7 +224,7 @@ async function handleMessage(message: Message): Promise<void> {
   }
 
   if (!isDM && !isThread && isMentioned) {
-    const threadChannel = await createMentionThread(message, channel, senderName);
+    const threadChannel = await createMentionThread(message, channel, senderName, content);
     if (!threadChannel) {
       return;
     }
@@ -253,6 +253,7 @@ async function createMentionThread(
   message: Message,
   parentChannel: RegisteredChannel,
   senderName: string,
+  initialPrompt: string,
 ): Promise<RegisteredChannel | undefined> {
   if (!('threads' in message.channel)) {
     logger.warn({ jid: parentChannel.jid }, 'Mentioned channel cannot create threads');
@@ -261,7 +262,7 @@ async function createMentionThread(
 
   const parentJid = parentChannel.jid;
   const thread = await (message.channel as TextChannel).threads.create({
-    name: buildMentionThreadName(senderName),
+    name: buildMentionThreadName(initialPrompt, senderName),
     type: ChannelType.PrivateThread,
     invitable: false,
     autoArchiveDuration: 1440,
@@ -295,9 +296,13 @@ async function createMentionThread(
   return threadChannel;
 }
 
-function buildMentionThreadName(senderName: string): string {
-  const safeName = senderName.replace(/\s+/g, ' ').trim() || 'user';
-  return `pi-${safeName}`.slice(0, 100);
+function buildMentionThreadName(prompt: string, senderName: string): string {
+  const summary = prompt
+    .replace(/\s+/g, ' ')
+    .replace(/[^\p{L}\p{N}\p{P}\p{Zs}]/gu, '')
+    .trim();
+  const fallback = senderName.replace(/\s+/g, ' ').trim() || 'user';
+  return `pi-${summary || fallback}`.slice(0, 100);
 }
 
 // ── Outbound ──

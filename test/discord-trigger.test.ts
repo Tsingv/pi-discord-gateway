@@ -82,7 +82,7 @@ afterEach(() => {
 describe('Discord mention trigger', () => {
   it('requires an actual Discord mention for trigger-only channels', async () => {
     process.env.DISCORD_BOT_TOKEN = 'token';
-    getChannelMock.mockReturnValue(triggerOnlyChannel());
+    getChannelMock.mockReturnValue(triggerOnlyChannel({ cwdOverride: '/srv/app' }));
 
     const { startDiscord } = await import('../src/discord/client.js');
     await startDiscord();
@@ -103,8 +103,10 @@ describe('Discord mention trigger', () => {
     expect(registerChannelMock).toHaveBeenCalledWith(
       expect.objectContaining({
         jid: 'dc:thread-1',
+        name: 'guild #general / pi-hello',
         folder: 'thread_thread-1',
         requiresTrigger: false,
+        cwdOverride: '/srv/app',
         parentJid: 'dc:channel-1',
       }),
     );
@@ -135,9 +137,27 @@ describe('Discord mention trigger', () => {
       }),
     );
   });
+
+  it('falls back to sender name when the mention has no prompt text', async () => {
+    process.env.DISCORD_BOT_TOKEN = 'token';
+    getChannelMock.mockReturnValue(triggerOnlyChannel());
+
+    const { startDiscord } = await import('../src/discord/client.js');
+    await startDiscord();
+    const fakeClient = fakeClientInstances[0];
+
+    fakeClient.emit('messageCreate', createMessage('<@bot-id>   ', true));
+    await flushAsyncHandlers();
+
+    expect(registerChannelMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'guild #general / pi-Alice',
+      }),
+    );
+  });
 });
 
-function triggerOnlyChannel(): RegisteredChannel {
+function triggerOnlyChannel(overrides: Partial<RegisteredChannel> = {}): RegisteredChannel {
   return {
     jid: 'dc:channel-1',
     name: 'guild #general',
@@ -148,6 +168,7 @@ function triggerOnlyChannel(): RegisteredChannel {
     thinkingOverride: '',
     cwdOverride: '',
     parentJid: '',
+    ...overrides,
   };
 }
 
@@ -155,7 +176,9 @@ function createMessage(content: string, mentioned = false, options?: { thread?: 
   const thread = {
     id: 'thread-1',
     members: { add: vi.fn().mockResolvedValue('user-1') },
-    name: 'pi-Alice',
+    name: content.replace(/<@!?bot-id>/g, '').trim()
+      ? `pi-${content.replace(/<@!?bot-id>/g, '').trim()}`
+      : 'pi-Alice',
   };
   const channel = options?.thread
     ? {

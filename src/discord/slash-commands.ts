@@ -19,6 +19,7 @@ import {
   createDmChannel,
   getChannel,
   registerChannel,
+  setChannelCwdOverride,
   setChannelModelOverride,
   setChannelThinkingOverride,
 } from '../db.js';
@@ -84,6 +85,17 @@ const PI_COMMAND = new SlashCommandBuilder()
       ),
   )
   .addSubcommand((sub) =>
+    sub
+      .setName('cwd')
+      .setDescription('Set the working directory and start a fresh pi session')
+      .addStringOption((option) =>
+        option
+          .setName('path')
+          .setDescription('Working directory path for this channel')
+          .setRequired(true),
+      ),
+  )
+  .addSubcommand((sub) =>
     sub.setName('new').setDescription('Start a fresh pi session for this channel'),
   )
   .addSubcommand((sub) =>
@@ -130,6 +142,9 @@ export async function handleChatCommand(interaction: ChatInputCommandInteraction
       case 'thinking':
         await handleThinkingSet(interaction);
         return;
+      case 'cwd':
+        await handleCwdSet(interaction);
+        return;
       case 'new':
         await handleNew(interaction);
         return;
@@ -172,8 +187,7 @@ async function handleNew(interaction: ChatInputCommandInteraction): Promise<void
     return;
   }
 
-  const cleared = clearPendingMessages(channel.jid);
-  const archivedSession = rotateChannelSessionDir(channel.folder);
+  const { cleared, archivedSession } = resetChannelSession(channel);
 
   logger.info(
     { jid: channel.jid, cleared, archived: Boolean(archivedSession) },
@@ -189,6 +203,60 @@ async function handleNew(interaction: ChatInputCommandInteraction): Promise<void
   }
 
   await interaction.reply(reply(notes.join('\n'), interaction));
+}
+
+async function handleCwdSet(interaction: ChatInputCommandInteraction): Promise<void> {
+  const channel = ensureManagedChannel(interaction);
+  if (!channel) {
+    await interaction.reply(reply(notRegisteredMessage(), interaction));
+    return;
+  }
+
+  if (isChannelProcessing(channel.jid)) {
+    await interaction.reply(
+      reply(
+        'This channel is currently processing a message. Wait for it to finish, then run /pi cwd again.',
+        interaction,
+      ),
+    );
+    return;
+  }
+
+  const cwd = interaction.options.getString('path', true).trim();
+  if (!cwd) {
+    await interaction.reply(reply('Working directory cannot be empty.', interaction));
+    return;
+  }
+
+  setChannelCwdOverride(channel.jid, cwd);
+  const updated = getChannel(channel.jid) ?? { ...channel, cwdOverride: cwd };
+  const { cleared, archivedSession } = resetChannelSession(updated);
+
+  logger.info(
+    { jid: updated.jid, cwd, cleared, archived: Boolean(archivedSession) },
+    'Channel cwd changed and session reset',
+  );
+
+  const notes = [`Working directory set to ${cwd} for this channel.`];
+  notes.push('Started a fresh session for this channel.');
+  if (cleared > 0) {
+    notes.push(`Cleared ${cleared} queued ${cleared === 1 ? 'message' : 'messages'}.`);
+  }
+  if (archivedSession) {
+    notes.push('Archived the previous session on disk.');
+  }
+
+  await interaction.reply(reply(notes.join('\n'), interaction));
+}
+
+function resetChannelSession(channel: RegisteredChannel): {
+  cleared: number;
+  archivedSession: string | undefined;
+} {
+  return {
+    cleared: clearPendingMessages(channel.jid),
+    archivedSession: rotateChannelSessionDir(channel.folder),
+  };
 }
 
 async function handleStop(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -343,6 +411,31 @@ function ensureManagedChannel(
   // Allow slash commands to bootstrap DM channels, same as normal DM messages.
   if (!interaction.guild && config.autoRegisterDMs) {
     const reg = createDmChannel(jid, interaction.user.id, interaction.user.username);
+    registerChannel(reg);
+    return getChannel(jid) ?? reg;
+  }
+
+  if (interaction.guild && config.channelPolicy !== 'allowlist') {
+    const interactionChannel =
+      (interaction.channel as {
+        isThread?: () => boolean;
+        name?: string;
+        parentId?: string | null;
+      } | null) ?? undefined;
+    const isThread = interactionChannel?.isThread?.() ?? false;
+    const channelName = interactionChannel?.name || 'unknown';
+    const reg: RegisteredChannel = {
+      jid,
+      name: `${interaction.guild.name || 'Unknown'} #${channelName}`,
+      folder: isThread ? `thread_${interaction.channelId}` : `ch_${interaction.channelId}`,
+      requiresTrigger: config.channelPolicy === 'open-trigger',
+      isMain: false,
+      modelOverride: '',
+      thinkingOverride: '',
+      cwdOverride: '',
+      parentJid:
+        isThread && interactionChannel?.parentId ? `dc:${interactionChannel.parentId}` : '',
+    };
     registerChannel(reg);
     return getChannel(jid) ?? reg;
   }

@@ -204,6 +204,13 @@ export function clearChannelThinkingOverride(jid: string): boolean {
   return result.changes > 0;
 }
 
+export function setChannelCwdOverride(jid: string, cwdOverride: string): boolean {
+  const result = db
+    .prepare('update channels set cwd_override = ? where jid = ?')
+    .run(cwdOverride.trim(), jid);
+  return result.changes > 0;
+}
+
 function rowToChannel(row: any): RegisteredChannel {
   return {
     jid: row.jid,

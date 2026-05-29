@@ -41,7 +41,7 @@ That's it. The setup wizard checks prerequisites, asks for your Discord bot toke
 - **SQLite message queue** — survives crashes, auto-recovers stuck messages
 - **Concurrency control** — per-channel serial processing + configurable global limit
 - **DM auto-registration** — direct messages work out of the box
-- **Discord slash commands** — `/pi status`, `/pi model`, `/pi thinking`, `/pi new`, `/pi stop`
+- **Discord slash commands** — `/pi status`, `/pi model`, `/pi thinking`, `/pi cwd`, `/pi new`, `/pi stop`
 - **Abort command** — `/pi stop` terminates the running task and clears queued messages
 - **Attachment relay** — Discord file uploads are downloaded and passed to `pi` via `@file`
 - **Message and file sending** — `piscord send` lets pi send plain text, files, or both to any Discord channel
@@ -81,6 +81,7 @@ During setup you pick one of three policies. This controls how the bot interacts
 
 - DMs always auto-register when `AUTO_REGISTER_DMS=true` (the default).
 - In guild channels, mentioning the bot opens a private thread with the bot and the mentioning user. Follow-up replies in that thread continue the same pi session.
+- Set `/pi cwd` in a parent channel before mentioning the bot to make newly created mention threads start their pi sessions from that working directory.
 - Use `EXCLUDED_CHANNELS` to block specific channels from auto-registration in `open` / `open-trigger` mode.
 
 If you chose `allowlist`, register channels manually:
@@ -102,6 +103,7 @@ The gateway registers a global `/pi` command on Discord:
 | `/pi model`       | Set the channel's model (autocomplete from pi's available models)  |
 | `/pi reset-model` | Clear the channel's model override                                 |
 | `/pi thinking`    | Set thinking level: off / minimal / low / medium / high / xhigh    |
+| `/pi cwd`         | Set the channel working directory and start a fresh session        |
 | `/pi new`         | Start a fresh session for this channel                             |
 | `/pi stop`        | Abort the current task and clear queued messages                   |
 
