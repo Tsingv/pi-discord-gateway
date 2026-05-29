@@ -62,7 +62,8 @@ describe('invokeAgent spawn mode', () => {
       [
         '--session-dir',
         resolve(tempDir, 'sessions/guild/general'),
-        '--continue',
+        '--session-id',
+        expect.stringMatching(/^piscord-guild\.general-[a-f0-9]{12}$/u),
         '-p',
         'hello world',
       ],
@@ -87,18 +88,22 @@ describe('invokeAgent spawn mode', () => {
     });
 
     const expectedSessionDir = resolve(tempDir, 'sessions/guild/general');
+    const expectedShellPrefix = [
+      "'/opt/pi bin/pi'",
+      "'--session-dir'",
+      `'${expectedSessionDir}'`,
+      "'--session-id'",
+    ].join(' ');
     expect(spawnMock).toHaveBeenCalledWith(
       'bash',
       [
         '-lic',
-        [
-          "'/opt/pi bin/pi'",
-          "'--session-dir'",
-          `'${expectedSessionDir}'`,
-          "'--continue'",
-          "'-p'",
-          "'hello '\\''quoted'\\'' world'",
-        ].join(' '),
+        expect.stringMatching(
+          new RegExp(
+            `^${escapeRegExp(expectedShellPrefix)} 'piscord-guild\\.general-[a-f0-9]{12}' '-p' 'hello '\\\\''quoted'\\\\'' world'$`,
+            'u',
+          ),
+        ),
       ],
       expect.objectContaining({
         cwd: resolve(tempDir, 'work project'),
@@ -167,7 +172,8 @@ describe('invokeAgent spawn mode', () => {
       [
         '--session-dir',
         resolve(tempDir, 'sessions/guild/general'),
-        '--continue',
+        '--session-id',
+        expect.stringMatching(/^piscord-guild\.general-[a-f0-9]{12}$/u),
         '--mode',
         'json',
         '-p',
@@ -221,6 +227,10 @@ function configureInvokeEnv(options: {
   }
 
   return tempDir;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function createSuccessfulProcess(stdout: string): EventEmitter & {

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { closeSync, existsSync, openSync, readSync, readdirSync, renameSync } from 'node:fs';
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
 import { config } from '../config.js';
@@ -39,6 +40,21 @@ export function resolveChannelSessionDir(folder: string): string {
   }
 
   return sessionDir;
+}
+
+/** Build a stable pi session id for a Discord channel/thread session folder. */
+export function buildChannelSessionId(folder: string): string {
+  const safeFolder = validateSessionFolder(folder);
+  const readable =
+    safeFolder
+      .replace(/[\\/]+/g, '.')
+      .replace(/[^A-Za-z0-9._-]+/g, '-')
+      .replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '')
+      .slice(0, 48)
+      .replace(/[^A-Za-z0-9]+$/g, '') || 'channel';
+  const hash = createHash('sha256').update(safeFolder).digest('hex').slice(0, 12);
+
+  return `piscord-${readable}-${hash}`;
 }
 
 /** Resolve a media directory for a message under a validated channel session directory. */

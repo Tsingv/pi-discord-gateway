@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateSessionFolder } from '../src/session/path.js';
+import { buildChannelSessionId, validateSessionFolder } from '../src/session/path.js';
 
 describe('validateSessionFolder', () => {
   it('accepts valid relative folder names', () => {
@@ -20,5 +20,15 @@ describe('validateSessionFolder', () => {
     expect(() => validateSessionFolder('guild/../channel')).toThrow(
       'Session folder contains an invalid path segment',
     );
+  });
+});
+
+describe('buildChannelSessionId', () => {
+  it('builds stable pi session ids from channel folders', () => {
+    expect(buildChannelSessionId('thread_123')).toMatch(/^piscord-thread_123-[a-f0-9]{12}$/u);
+    expect(buildChannelSessionId('guild/general')).toMatch(
+      /^piscord-guild\.general-[a-f0-9]{12}$/u,
+    );
+    expect(buildChannelSessionId('guild/general')).toBe(buildChannelSessionId('guild/general'));
   });
 });

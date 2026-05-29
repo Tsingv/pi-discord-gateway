@@ -6,6 +6,7 @@ import { config } from '../config.js';
 import { logger } from '../logger.js';
 import { downloadAttachments } from '../session/media.js';
 import {
+  buildChannelSessionId,
   readSessionCreatedAt,
   resolveChannelSessionDir,
   resolveLatestChannelSessionFile,
@@ -38,7 +39,7 @@ export interface ChannelSessionStatus {
  * Invoke pi agent as a subprocess.
  *
  * Each channel gets its own session directory so conversation history persists.
- * Uses `pi --session-dir <dir> --continue -p <message>` (print mode, no TUI).
+ * Uses `pi --session-dir <dir> --session-id <id> -p <message>` (print mode, no TUI).
  */
 export async function invokeAgent(
   channelFolder: string,
@@ -53,12 +54,13 @@ export async function invokeAgent(
   },
 ): Promise<AgentResult> {
   const sessionDir = resolveChannelSessionDir(channelFolder);
+  const sessionId = buildChannelSessionId(channelFolder);
   mkdirSync(sessionDir, { recursive: true });
   const effectiveCwd = opts?.cwd || config.piCwd;
 
-  // `--session` expects a session *file* path. We want a dedicated directory per
-  // Discord channel and to keep reusing the most recent session inside it.
-  const args: string[] = ['--session-dir', sessionDir, '--continue'];
+  // Pin pi to the exact Discord channel/thread session. `--session-id` creates
+  // the session on first use and reopens it on subsequent messages.
+  const args: string[] = ['--session-dir', sessionDir, '--session-id', sessionId];
 
   // Model
   const model = opts?.model || config.piModel;

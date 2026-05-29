@@ -26,7 +26,7 @@ That's it. The setup wizard checks prerequisites, asks for your Discord bot toke
 
 - **Node.js** ≥ 20
 - **Linux, macOS, or Windows**
-- **[pi](https://github.com/badlogic/pi-mono)** ≥ 0.74.0 installed and on `PATH`, with login completed (`~/.pi/agent/auth.json`)
+- **[pi](https://github.com/badlogic/pi-mono)** ≥ 0.77.0 installed and on `PATH`, with login completed (`~/.pi/agent/auth.json`)
 - **Discord bot token** — [create one here](https://discord.com/developers/applications)
   - Enable **Message Content Intent** under Privileged Gateway Intents
   - Bot permissions: `Send Messages`, `Send Messages in Threads`, `Read Message History`, `View Channels`, `Attach Files`, `Create Private Threads`, `Manage Threads`
@@ -60,7 +60,7 @@ That's it. The setup wizard checks prerequisites, asks for your Discord bot toke
 Discord ──discord.js──→ Gateway ──pi subprocess──→ Pi Agent
                            │                          │
                          SQLite                  Session dirs
-                      (message queue)           (per channel)
+                      (message queue)        (per thread/channel)
 ```
 
 The gateway **does not embed or replace `pi`**. It finds and runs your installed `pi`:
@@ -68,7 +68,7 @@ The gateway **does not embed or replace `pi`**. It finds and runs your installed
 1. **Binary discovery** — uses `PI_BIN` config or finds `pi` in `PATH`
 2. **Auth reuse** — `pi` reads its own `~/.pi/agent/auth.json` when invoked
 3. **Model catalog** — the gateway imports the pi SDK to populate slash command autocomplete
-4. **Invocation** — each message is processed as `pi --session-dir <dir> --continue -p <message>`
+4. **Invocation** — each message is processed as `pi --session-dir <dir> --session-id <id> -p <message>`
 
 ## Channel Policy
 
@@ -82,6 +82,7 @@ During setup you pick one of three policies. This controls how the bot interacts
 
 - DMs always auto-register when `AUTO_REGISTER_DMS=true` (the default).
 - In guild channels, mentioning the bot opens a private thread with the bot and the mentioning user. Follow-up replies in that thread continue the same pi session.
+- Each Discord thread gets its own stable pi `--session-id`; non-thread channels and DMs use their channel-level session id.
 - Set `/pi cwd` in a parent channel before mentioning the bot to make newly created mention threads start their pi sessions from that working directory.
 - Use `EXCLUDED_CHANNELS` to block specific channels from auto-registration in `open` / `open-trigger` mode.
 
