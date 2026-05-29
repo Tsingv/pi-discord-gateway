@@ -21,6 +21,7 @@ import {
 import { invokeAgent } from './invoke.js';
 import { sendResponse, setTyping } from '../discord/client.js';
 import { computeEffectiveChannelSettings } from './channel-settings.js';
+import type { AgentProgressEvent } from '../types.js';
 
 /** Channels currently being processed (per-channel serial lock) */
 const activeChannels = new Set<string>();
@@ -204,6 +205,7 @@ async function processMessage(
   logger.info({ jid, senderName, len: content.length }, 'Processing message');
 
   const typingLoop = createTypingLoop(jid);
+  const progressReporter = createAgentProgressReporter(jid);
 
   try {
     const prompt = `[Discord user: ${senderName}]\n${content}`;
@@ -218,7 +220,10 @@ async function processMessage(
       cwd: effective.effectiveCwd,
       signal,
       attachments,
+      onProgress: progressReporter?.report,
     });
+
+    await progressReporter?.flush();
 
     if (signal.aborted) {
       markMessageFailed(rowid);
@@ -245,6 +250,8 @@ async function processMessage(
     markMessageFailed(rowid);
     logger.warn({ jid, error: result.error }, 'Agent returned error');
   } catch (err: any) {
+    await progressReporter?.flush();
+
     if (signal.aborted) {
       markMessageFailed(rowid);
       logger.info({ jid, rowid }, 'Message abandoned: shutdown interrupted processing');
@@ -259,8 +266,91 @@ async function processMessage(
       // Nothing else to do here.
     }
   } finally {
+    await progressReporter?.flush();
     await typingLoop.stop();
   }
+}
+
+function createAgentProgressReporter(
+  jid: string,
+): { report: (event: AgentProgressEvent) => void; flush: () => Promise<void> } | undefined {
+  if (!config.piProgressUpdates) {
+    return undefined;
+  }
+
+  let lastSentAt = 0;
+  let pendingText: string | undefined;
+  let timer: NodeJS.Timeout | undefined;
+  let sendChain = Promise.resolve();
+
+  const sendNow = (text: string) => {
+    lastSentAt = Date.now();
+    sendChain = sendChain
+      .then(async () => {
+        const sent = await sendResponse(jid, text);
+        if (!sent) {
+          logger.warn({ jid }, 'Could not send agent progress update to Discord');
+        }
+      })
+      .catch((err: any) => {
+        logger.warn({ jid, err: err.message }, 'Agent progress update failed');
+      });
+  };
+
+  const schedule = (text: string) => {
+    const elapsedMs = Date.now() - lastSentAt;
+    const remainingMs = Math.max(0, config.piProgressMinIntervalMs - elapsedMs);
+    if (!timer && remainingMs === 0) {
+      sendNow(text);
+      return;
+    }
+
+    pendingText = text;
+    if (!timer) {
+      timer = setTimeout(() => {
+        timer = undefined;
+        const nextText = pendingText;
+        pendingText = undefined;
+        if (nextText) {
+          sendNow(nextText);
+        }
+      }, remainingMs);
+    }
+  };
+
+  return {
+    report: (event) => {
+      const text = formatAgentProgressMessage(event);
+      if (text) {
+        schedule(text);
+      }
+    },
+    flush: async () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      if (pendingText) {
+        const text = pendingText;
+        pendingText = undefined;
+        sendNow(text);
+      }
+      await sendChain;
+    },
+  };
+}
+
+function formatAgentProgressMessage(event: AgentProgressEvent): string {
+  return `[pi progress] ${truncateProgressLabel(event.label, 300)}`;
+}
+
+function truncateProgressLabel(label: string, maxLength: number): string {
+  const normalized = label.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 1)}...`;
 }
 
 function createTypingLoop(jid: string): { stop: () => Promise<void> } {

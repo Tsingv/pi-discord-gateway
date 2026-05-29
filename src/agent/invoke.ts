@@ -10,7 +10,7 @@ import {
   resolveChannelSessionDir,
   resolveLatestChannelSessionFile,
 } from '../session/path.js';
-import type { AgentResult } from '../types.js';
+import type { AgentProgressEvent, AgentResult } from '../types.js';
 
 export interface SessionTokenUsage {
   input: number;
@@ -49,6 +49,7 @@ export async function invokeAgent(
     cwd?: string;
     signal?: AbortSignal;
     attachments?: string | null;
+    onProgress?: (event: AgentProgressEvent) => void;
   },
 ): Promise<AgentResult> {
   const sessionDir = resolveChannelSessionDir(channelFolder);
@@ -70,6 +71,11 @@ export async function invokeAgent(
   // Extra flags
   if (config.piExtraFlags) {
     args.push(...config.piExtraFlags.split(/\s+/).filter(Boolean));
+  }
+
+  const jsonProgressMode = Boolean(opts?.onProgress);
+  if (jsonProgressMode) {
+    args.push('--mode', 'json');
   }
 
   // Download attachments and pass as @file args (pi handles all types natively)
@@ -127,8 +133,33 @@ export async function invokeAgent(
 
     const chunks: Buffer[] = [];
     const errChunks: Buffer[] = [];
+    let jsonStdout = '';
+    let finalAssistantText = '';
+    let finalAssistantError = '';
 
-    proc.stdout.on('data', (c: Buffer) => chunks.push(c));
+    proc.stdout.on('data', (c: Buffer) => {
+      if (!jsonProgressMode) {
+        chunks.push(c);
+        return;
+      }
+
+      jsonStdout += c.toString('utf-8');
+      let newlineIndex = jsonStdout.indexOf('\n');
+      while (newlineIndex !== -1) {
+        const line = jsonStdout.slice(0, newlineIndex).replace(/\r$/, '').trim();
+        jsonStdout = jsonStdout.slice(newlineIndex + 1);
+        if (line) {
+          const parsed = processPiJsonLine(line, opts?.onProgress);
+          if (parsed.assistantText !== undefined) {
+            finalAssistantText = parsed.assistantText;
+          }
+          if (parsed.assistantError !== undefined) {
+            finalAssistantError = parsed.assistantError;
+          }
+        }
+        newlineIndex = jsonStdout.indexOf('\n');
+      }
+    });
     proc.stderr.on('data', (c: Buffer) => errChunks.push(c));
 
     // Abort support
@@ -146,7 +177,19 @@ export async function invokeAgent(
     }
 
     proc.on('close', (code) => {
-      const stdout = Buffer.concat(chunks).toString('utf-8').trim();
+      if (jsonProgressMode && jsonStdout.trim()) {
+        const parsed = processPiJsonLine(jsonStdout.trim(), opts?.onProgress);
+        if (parsed.assistantText !== undefined) {
+          finalAssistantText = parsed.assistantText;
+        }
+        if (parsed.assistantError !== undefined) {
+          finalAssistantError = parsed.assistantError;
+        }
+      }
+
+      const stdout = jsonProgressMode
+        ? finalAssistantText.trim()
+        : Buffer.concat(chunks).toString('utf-8').trim();
       const stderr = Buffer.concat(errChunks).toString('utf-8').trim();
 
       if (code !== 0) {
@@ -159,6 +202,15 @@ export async function invokeAgent(
         return;
       }
 
+      if (finalAssistantError) {
+        resolve({
+          ok: false,
+          text: '',
+          error: finalAssistantError.slice(0, 600),
+        });
+        return;
+      }
+
       resolve({ ok: true, text: stdout || '(empty response)' });
     });
 
@@ -167,6 +219,167 @@ export async function invokeAgent(
       reject(err);
     });
   });
+}
+
+function processPiJsonLine(
+  line: string,
+  onProgress: ((event: AgentProgressEvent) => void) | undefined,
+): { assistantText?: string; assistantError?: string } {
+  try {
+    const event = JSON.parse(line) as Record<string, any>;
+    const progress = piEventToProgress(event);
+    if (progress && onProgress) {
+      try {
+        onProgress(progress);
+      } catch (err: any) {
+        logger.warn({ err: err.message }, 'Agent progress listener failed');
+      }
+    }
+
+    const assistant = extractAssistantMessage(event);
+    if (!assistant) {
+      return {};
+    }
+
+    return {
+      assistantText: extractAssistantText(assistant),
+      assistantError: extractAssistantError(assistant),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function piEventToProgress(event: Record<string, any>): AgentProgressEvent | undefined {
+  switch (event.type) {
+    case 'agent_start':
+      return { kind: 'agent_start', label: 'pi started processing' };
+    case 'turn_start':
+      return { kind: 'turn_start', label: 'pi is thinking' };
+    case 'tool_execution_start': {
+      const toolName = formatToolName(event.toolName);
+      return {
+        kind: 'tool_start',
+        label: `running tool: ${toolName}${formatToolArgs(event.args)}`,
+        toolName,
+        toolCallId: stringOrUndefined(event.toolCallId),
+      };
+    }
+    case 'tool_execution_end': {
+      const toolName = formatToolName(event.toolName);
+      return {
+        kind: 'tool_end',
+        label: `${event.isError ? 'tool failed' : 'tool finished'}: ${toolName}`,
+        toolName,
+        toolCallId: stringOrUndefined(event.toolCallId),
+        isError: Boolean(event.isError),
+      };
+    }
+    case 'compaction_start':
+      return { kind: 'compaction_start', label: 'compacting session context' };
+    case 'compaction_end':
+      return {
+        kind: 'compaction_end',
+        label: event.aborted ? 'context compaction aborted' : 'context compaction finished',
+      };
+    case 'auto_retry_start':
+      return {
+        kind: 'auto_retry_start',
+        label: `retrying request ${formatRetryAttempt(event)}`,
+      };
+    case 'auto_retry_end':
+      return {
+        kind: 'auto_retry_end',
+        label: event.success ? 'retry succeeded' : 'retry failed',
+      };
+    default:
+      return undefined;
+  }
+}
+
+function extractAssistantMessage(event: Record<string, any>): Record<string, any> | undefined {
+  if (event.type === 'message_end' && event.message?.role === 'assistant') {
+    return event.message;
+  }
+
+  if (event.type === 'agent_end' && Array.isArray(event.messages)) {
+    for (let i = event.messages.length - 1; i >= 0; i--) {
+      const message = event.messages[i];
+      if (message?.role === 'assistant') {
+        return message;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function extractAssistantText(message: Record<string, any>): string {
+  if (!Array.isArray(message.content)) {
+    return '';
+  }
+
+  return message.content
+    .filter((content) => content?.type === 'text' && typeof content.text === 'string')
+    .map((content) => content.text)
+    .join('\n')
+    .trim();
+}
+
+function extractAssistantError(message: Record<string, any>): string | undefined {
+  const stopReason = typeof message.stopReason === 'string' ? message.stopReason : '';
+  if (stopReason !== 'error' && stopReason !== 'aborted') {
+    return undefined;
+  }
+
+  if (typeof message.errorMessage === 'string' && message.errorMessage.trim()) {
+    return message.errorMessage.trim();
+  }
+
+  return `Request ${stopReason}`;
+}
+
+function formatToolName(value: unknown): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : 'unknown';
+}
+
+function formatToolArgs(args: unknown): string {
+  if (!args || typeof args !== 'object') {
+    return '';
+  }
+
+  const record = args as Record<string, unknown>;
+  const candidate =
+    stringOrUndefined(record.command) ||
+    stringOrUndefined(record.cmd) ||
+    stringOrUndefined(record.path) ||
+    stringOrUndefined(record.filePath) ||
+    stringOrUndefined(record.pattern);
+
+  return candidate ? ` (${truncateOneLine(candidate, 120)})` : '';
+}
+
+function formatRetryAttempt(event: Record<string, any>): string {
+  const attempt = typeof event.attempt === 'number' ? event.attempt : undefined;
+  const maxAttempts = typeof event.maxAttempts === 'number' ? event.maxAttempts : undefined;
+  if (!attempt || !maxAttempts) {
+    return '';
+  }
+
+  return `(${attempt}/${maxAttempts})`;
+}
+
+function stringOrUndefined(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function truncateOneLine(value: string, maxLength: number): string {
+  const oneLine = value.replace(/\s+/g, ' ').trim();
+  if (oneLine.length <= maxLength) {
+    return oneLine;
+  }
+
+  return `${oneLine.slice(0, maxLength - 1)}...`;
 }
 
 export async function getChannelSessionStatus(

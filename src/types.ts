@@ -34,3 +34,22 @@ export interface AgentResult {
   text: string;
   error?: string;
 }
+
+export type AgentProgressKind =
+  | 'agent_start'
+  | 'turn_start'
+  | 'tool_start'
+  | 'tool_end'
+  | 'compaction_start'
+  | 'compaction_end'
+  | 'auto_retry_start'
+  | 'auto_retry_end';
+
+/** Progress emitted while the pi subprocess is still running */
+export interface AgentProgressEvent {
+  kind: AgentProgressKind;
+  label: string;
+  toolName?: string;
+  toolCallId?: string;
+  isError?: boolean;
+}

@@ -120,6 +120,81 @@ describe('invokeAgent spawn mode', () => {
     expect(bin).toBe('zsh');
     expect(args).toEqual(['-lic', expect.stringContaining("'pi'")]);
   });
+
+  it('streams json progress events when a progress listener is provided', async () => {
+    const tempDir = configureInvokeEnv({ spawnMode: undefined, piBin: '/usr/local/bin/pi' });
+    spawnMock.mockImplementation(() =>
+      createJsonProcess([
+        { type: 'agent_start' },
+        { type: 'turn_start' },
+        {
+          type: 'tool_execution_start',
+          toolCallId: 'tool-1',
+          toolName: 'bash',
+          args: { command: 'npm test' },
+        },
+        {
+          type: 'tool_execution_end',
+          toolCallId: 'tool-1',
+          toolName: 'bash',
+          result: { content: [{ type: 'text', text: 'ok' }] },
+          isError: false,
+        },
+        {
+          type: 'message_end',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'json response' }],
+            stopReason: 'end_turn',
+          },
+        },
+      ]),
+    );
+
+    const progress: unknown[] = [];
+    const { invokeAgent } = await import('../src/agent/invoke.js');
+    await expect(
+      invokeAgent('guild/general', 'hello world', {
+        onProgress: (event) => progress.push(event),
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      text: 'json response',
+    });
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      '/usr/local/bin/pi',
+      [
+        '--session-dir',
+        resolve(tempDir, 'sessions/guild/general'),
+        '--continue',
+        '--mode',
+        'json',
+        '-p',
+        'hello world',
+      ],
+      expect.objectContaining({
+        cwd: resolve(tempDir, 'work project'),
+      }),
+    );
+    expect(progress).toEqual([
+      { kind: 'agent_start', label: 'pi started processing' },
+      { kind: 'turn_start', label: 'pi is thinking' },
+      {
+        kind: 'tool_start',
+        label: 'running tool: bash (npm test)',
+        toolName: 'bash',
+        toolCallId: 'tool-1',
+      },
+      {
+        kind: 'tool_end',
+        label: 'tool finished: bash',
+        toolName: 'bash',
+        toolCallId: 'tool-1',
+        isError: false,
+      },
+    ]);
+  });
 });
 
 function configureInvokeEnv(options: {
@@ -165,6 +240,32 @@ function createSuccessfulProcess(stdout: string): EventEmitter & {
 
   queueMicrotask(() => {
     proc.stdout.emit('data', Buffer.from(stdout));
+    proc.emit('close', 0);
+  });
+
+  return proc;
+}
+
+function createJsonProcess(events: unknown[]): EventEmitter & {
+  stdout: EventEmitter;
+  stderr: EventEmitter;
+  kill: ReturnType<typeof vi.fn>;
+} {
+  const proc = new EventEmitter() as EventEmitter & {
+    stdout: EventEmitter;
+    stderr: EventEmitter;
+    kill: ReturnType<typeof vi.fn>;
+  };
+
+  proc.stdout = new EventEmitter();
+  proc.stderr = new EventEmitter();
+  proc.kill = vi.fn();
+
+  queueMicrotask(() => {
+    proc.stdout.emit(
+      'data',
+      Buffer.from(`${events.map((event) => JSON.stringify(event)).join('\n')}\n`),
+    );
     proc.emit('close', 0);
   });
 

@@ -176,6 +176,12 @@ export const config = {
   /** Poll interval for message queue (ms) */
   pollInterval: envInt('POLL_INTERVAL_MS', 1000, { min: 1 }),
 
+  /** Send pi run progress updates to Discord while the subprocess is active */
+  piProgressUpdates: envBool('PI_PROGRESS_UPDATES', true),
+
+  /** Minimum interval between Discord progress messages (ms) */
+  piProgressMinIntervalMs: envInt('PI_PROGRESS_MIN_INTERVAL_MS', 4_000, { min: 0 }),
+
   /** Graceful shutdown timeout before aborting in-flight tasks (ms) */
   shutdownTimeoutMs: envInt('SHUTDOWN_TIMEOUT_MS', 15_000, { min: 0 }),
 

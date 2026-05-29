@@ -20,6 +20,8 @@ const CONFIG_ENV_KEYS = [
   'PI_CWD',
   'PI_EXTRA_FLAGS',
   'PI_MODEL',
+  'PI_PROGRESS_MIN_INTERVAL_MS',
+  'PI_PROGRESS_UPDATES',
   'PI_SPAWN_MODE',
   'PI_THINKING',
   'POLL_INTERVAL_MS',
@@ -148,6 +150,16 @@ describe('config loading', () => {
     process.env.PI_SPAWN_MODE = 'fish';
     loaded = await loadConfigModule();
     expect(loaded.config.piSpawnMode).toBe('direct');
+  });
+
+  it('parses pi progress update settings', async () => {
+    process.env.PI_PROGRESS_UPDATES = 'false';
+    process.env.PI_PROGRESS_MIN_INTERVAL_MS = '250';
+
+    const { config } = await loadConfigModule();
+
+    expect(config.piProgressUpdates).toBe(false);
+    expect(config.piProgressMinIntervalMs).toBe(250);
   });
 });
 

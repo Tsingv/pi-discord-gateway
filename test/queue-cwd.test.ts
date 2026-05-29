@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AgentProgressEvent, AgentResult } from '../src/types.js';
 
 const { invokeAgentMock, sendResponseMock, setTypingMock } = vi.hoisted(() => ({
   invokeAgentMock: vi.fn(),
@@ -24,6 +25,8 @@ const CONFIG_ENV_KEYS = [
   'DB_PATH',
   'MAX_CONCURRENCY',
   'PI_CWD',
+  'PI_PROGRESS_MIN_INTERVAL_MS',
+  'PI_PROGRESS_UPDATES',
   'POLL_INTERVAL_MS',
   'SESSIONS_DIR',
 ];
@@ -56,9 +59,39 @@ describe('queue cwd selection', () => {
     const call = await runQueuedMessage('');
     expect(call?.cwd).toBe('/global/project');
   });
+
+  it('sends agent progress updates before the final response', async () => {
+    await runQueuedMessage('', {
+      responseCount: 2,
+      invokeImpl: async (_folder, _prompt, opts) => {
+        opts?.onProgress?.({
+          kind: 'tool_start',
+          label: 'running tool: bash (npm test)',
+          toolName: 'bash',
+          toolCallId: 'tool-1',
+        });
+        return { ok: true, text: 'done' };
+      },
+    });
+
+    expect(sendResponseMock.mock.calls.map((call) => call[1])).toEqual([
+      '[pi progress] running tool: bash (npm test)',
+      'done',
+    ]);
+  });
 });
 
-async function runQueuedMessage(cwdOverride: string): Promise<{ cwd?: string } | undefined> {
+async function runQueuedMessage(
+  cwdOverride: string,
+  options: {
+    responseCount?: number;
+    invokeImpl?: (
+      folder: string,
+      prompt: string,
+      opts?: { cwd?: string; onProgress?: (event: AgentProgressEvent) => void },
+    ) => Promise<AgentResult>;
+  } = {},
+): Promise<{ cwd?: string } | undefined> {
   const tempDir = mkdtempSync(join(tmpdir(), 'pidg-queue-cwd-'));
   tempDirs.push(tempDir);
 
@@ -67,8 +100,14 @@ async function runQueuedMessage(cwdOverride: string): Promise<{ cwd?: string } |
   process.env.POLL_INTERVAL_MS = '1';
   process.env.MAX_CONCURRENCY = '1';
   process.env.PI_CWD = '/global/project';
+  process.env.PI_PROGRESS_UPDATES = 'true';
+  process.env.PI_PROGRESS_MIN_INTERVAL_MS = '4000';
 
-  invokeAgentMock.mockResolvedValue({ ok: true, text: 'done' });
+  if (options.invokeImpl) {
+    invokeAgentMock.mockImplementation(options.invokeImpl);
+  } else {
+    invokeAgentMock.mockResolvedValue({ ok: true, text: 'done' });
+  }
   sendResponseMock.mockResolvedValue(true);
   setTypingMock.mockResolvedValue(undefined);
 
@@ -102,7 +141,7 @@ async function runQueuedMessage(cwdOverride: string): Promise<{ cwd?: string } |
     await vi.waitFor(
       () => {
         expect(invokeAgentMock).toHaveBeenCalledTimes(1);
-        expect(sendResponseMock).toHaveBeenCalledTimes(1);
+        expect(sendResponseMock).toHaveBeenCalledTimes(options.responseCount ?? 1);
       },
       { timeout: 2000, interval: 10 },
     );

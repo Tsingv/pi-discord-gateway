@@ -49,6 +49,7 @@ That's it. The setup wizard checks prerequisites, asks for your Discord bot toke
 - **Archive auto-cleanup** — archived sessions are cleaned up after a configurable retention period
 - **Cross-platform** — runs on Linux, macOS, and Windows with platform-aware defaults
 - **Typing indicators** — shows "bot is typing" while `pi` processes
+- **Progress updates** — streams concise run progress and tool-call updates while `pi` is still working
 - **Message splitting** — handles Discord's 2000-character limit automatically
 - **Daemon management** — systemd on Linux, launchd on macOS
 - **Platform-aware paths** — XDG on Linux, `~/Library/Application Support` on macOS, `%LOCALAPPDATA%` on Windows
@@ -197,28 +198,30 @@ Config file location depends on your OS (see Data Locations). On Linux: `~/.conf
 
 Most users won't need to edit this file directly — `piscord setup` generates it for you. If you do want to tweak advanced settings, you can edit the file manually, or ask your pi to configure it for you. Run `piscord status` to see the config path on your system.
 
-| Variable                     | Default                         | Description                                                                              |
-| ---------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------- |
-| `DISCORD_BOT_TOKEN`          | _(required)_                    | Discord bot token                                                                        |
-| `PI_BIN`                     | `pi`                            | Path to pi binary                                                                        |
-| `PI_SPAWN_MODE`              | `direct`                        | How to launch pi: `direct`, `bash`, or `zsh`; shell modes use an interactive login shell |
-| `PI_MODEL`                   | _(none)_                        | Default model override                                                                   |
-| `PI_THINKING`                | _(none)_                        | Default thinking level                                                                   |
-| `PI_CWD`                     | `$HOME`                         | Default working directory for pi; can be overridden per registered channel               |
-| `PI_EXTRA_FLAGS`             | _(none)_                        | Extra flags passed to pi                                                                 |
-| `CHANNEL_POLICY`             | `open`                          | Channel access: `open`, `open-trigger`, or `allowlist`                                   |
-| `EXCLUDED_CHANNELS`          | _(none)_                        | Comma-separated channel IDs to exclude from auto-registration                            |
-| `MAX_CONCURRENCY`            | `3`                             | Max parallel pi invocations                                                              |
-| `MAX_SCHEDULED_CONCURRENCY`  | `1`                             | Max scheduled tasks enqueued per tick                                                    |
-| `POLL_INTERVAL_MS`           | `1000`                          | Queue poll interval (ms)                                                                 |
-| `SHUTDOWN_TIMEOUT_MS`        | `15000`                         | Graceful shutdown timeout (ms)                                                           |
-| `AUTO_REGISTER_DMS`          | `true`                          | Auto-register DM channels                                                                |
-| `ARCHIVE_RETENTION_DAYS`     | `30`                            | Days to keep archived sessions (0 = never clean)                                         |
-| `MAX_ATTACHMENT_BYTES`       | `26214400`                      | Max size per attachment (0 = no limit)                                                   |
-| `MAX_TOTAL_ATTACHMENT_BYTES` | `52428800`                      | Max combined attachment size (0 = no limit)                                              |
-| `SESSIONS_DIR`               | _(platform default)_/sessions   | Session storage directory (see Data Locations)                                           |
-| `DB_PATH`                    | _(platform default)_/gateway.db | SQLite database path (see Data Locations)                                                |
-| `LOG_LEVEL`                  | `info`                          | Log level: debug/info/warn/error                                                         |
+| Variable                      | Default                         | Description                                                                              |
+| ----------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------- |
+| `DISCORD_BOT_TOKEN`           | _(required)_                    | Discord bot token                                                                        |
+| `PI_BIN`                      | `pi`                            | Path to pi binary                                                                        |
+| `PI_SPAWN_MODE`               | `direct`                        | How to launch pi: `direct`, `bash`, or `zsh`; shell modes use an interactive login shell |
+| `PI_MODEL`                    | _(none)_                        | Default model override                                                                   |
+| `PI_THINKING`                 | _(none)_                        | Default thinking level                                                                   |
+| `PI_CWD`                      | `$HOME`                         | Default working directory for pi; can be overridden per registered channel               |
+| `PI_EXTRA_FLAGS`              | _(none)_                        | Extra flags passed to pi                                                                 |
+| `CHANNEL_POLICY`              | `open`                          | Channel access: `open`, `open-trigger`, or `allowlist`                                   |
+| `EXCLUDED_CHANNELS`           | _(none)_                        | Comma-separated channel IDs to exclude from auto-registration                            |
+| `MAX_CONCURRENCY`             | `3`                             | Max parallel pi invocations                                                              |
+| `MAX_SCHEDULED_CONCURRENCY`   | `1`                             | Max scheduled tasks enqueued per tick                                                    |
+| `POLL_INTERVAL_MS`            | `1000`                          | Queue poll interval (ms)                                                                 |
+| `PI_PROGRESS_UPDATES`         | `true`                          | Send concise run progress and tool-call updates to Discord while pi is working           |
+| `PI_PROGRESS_MIN_INTERVAL_MS` | `4000`                          | Minimum delay between progress messages per active Discord task                          |
+| `SHUTDOWN_TIMEOUT_MS`         | `15000`                         | Graceful shutdown timeout (ms)                                                           |
+| `AUTO_REGISTER_DMS`           | `true`                          | Auto-register DM channels                                                                |
+| `ARCHIVE_RETENTION_DAYS`      | `30`                            | Days to keep archived sessions (0 = never clean)                                         |
+| `MAX_ATTACHMENT_BYTES`        | `26214400`                      | Max size per attachment (0 = no limit)                                                   |
+| `MAX_TOTAL_ATTACHMENT_BYTES`  | `52428800`                      | Max combined attachment size (0 = no limit)                                              |
+| `SESSIONS_DIR`                | _(platform default)_/sessions   | Session storage directory (see Data Locations)                                           |
+| `DB_PATH`                     | _(platform default)_/gateway.db | SQLite database path (see Data Locations)                                                |
+| `LOG_LEVEL`                   | `info`                          | Log level: debug/info/warn/error                                                         |
 
 After changing config, restart the service: `piscord daemon stop && piscord daemon start`
 
