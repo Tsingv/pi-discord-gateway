@@ -7,7 +7,6 @@ import { listAvailableModels } from '../agent/model-catalog.js';
 import { defaultDataDir, resolveConfigPath } from '../config.js';
 
 const SERVICE_NAME = 'pi-discord-gateway';
-const DEFAULT_TRIGGER_NAME = 'pi';
 const DEFAULT_WORKING_DIR = homedir();
 const DEFAULT_DATA_DIR = defaultDataDir();
 const DEFAULT_SESSIONS_DIR = resolve(DEFAULT_DATA_DIR, 'sessions');
@@ -68,22 +67,6 @@ export async function runSetup(args: string[]): Promise<void> {
     throw new Error('Discord Bot Token cannot be empty.');
   }
 
-  // ── Trigger name ──
-  let triggerName = DEFAULT_TRIGGER_NAME;
-  if (interactive) {
-    const result = await clack.text({
-      message: 'Trigger Name',
-      placeholder: DEFAULT_TRIGGER_NAME,
-      defaultValue: DEFAULT_TRIGGER_NAME,
-      initialValue: DEFAULT_TRIGGER_NAME,
-    });
-    if (clack.isCancel(result)) {
-      clack.cancel('Setup cancelled.');
-      process.exit(0);
-    }
-    triggerName = result || DEFAULT_TRIGGER_NAME;
-  }
-
   // ── Channel policy ──
   let channelPolicy: 'open' | 'open-trigger' | 'allowlist' = 'open';
   if (interactive) {
@@ -98,7 +81,7 @@ export async function runSetup(args: string[]): Promise<void> {
         {
           value: 'open-trigger' as const,
           label: 'open-trigger',
-          hint: `Listen in all channels, but only respond when @${triggerName} is mentioned`,
+          hint: 'Listen in all channels, but only respond when the Discord bot is mentioned',
         },
         {
           value: 'allowlist' as const,
@@ -140,7 +123,6 @@ export async function runSetup(args: string[]): Promise<void> {
     configPath,
     buildConfigFile({
       token,
-      triggerName,
       workingDir,
       channelPolicy,
       sessionsDir: DEFAULT_SESSIONS_DIR,
@@ -186,7 +168,6 @@ export async function runSetup(args: string[]): Promise<void> {
   const summaryLines = [
     `Config:    ${configPath}`,
     `Policy:    ${channelPolicy}`,
-    `Trigger:   ${triggerName}`,
     `Sessions:  ${DEFAULT_SESSIONS_DIR}`,
   ];
   clack.note(summaryLines.join('\n'), 'Configuration');
@@ -225,7 +206,6 @@ function isUnix(): boolean {
 
 export function buildConfigFile(options: {
   token: string;
-  triggerName: string;
   workingDir: string;
   channelPolicy?: 'open' | 'open-trigger' | 'allowlist';
   sessionsDir: string;
@@ -239,13 +219,13 @@ export function buildConfigFile(options: {
     '',
     '# Pi agent configuration',
     'PI_BIN=pi',
+    'PI_SPAWN_MODE=direct',
     'PI_MODEL=',
     'PI_THINKING=',
     `PI_CWD=${options.workingDir}`,
     'PI_EXTRA_FLAGS=',
     '',
     '# Gateway behavior',
-    `TRIGGER_NAME=${options.triggerName}`,
     'MAX_CONCURRENCY=3',
     'MAX_SCHEDULED_CONCURRENCY=1',
     'POLL_INTERVAL_MS=1000',

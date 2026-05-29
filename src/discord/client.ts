@@ -7,6 +7,7 @@
  */
 
 import {
+  ChannelType,
   Client,
   Events,
   GatewayIntentBits,
@@ -33,7 +34,6 @@ import {
 import { handleAutocomplete, handleChatCommand, registerGlobalCommands } from './slash-commands.js';
 
 let client: Client | null = null;
-let triggerPattern: RegExp;
 let botId: string;
 
 export async function startDiscord(): Promise<void> {
@@ -56,7 +56,6 @@ export async function startDiscord(): Promise<void> {
     const onReady = async (ready: Client<true>) => {
       cleanup();
       botId = ready.user.id;
-      triggerPattern = new RegExp(`^@${escapeRegExp(config.triggerName)}\\b`, 'i');
       logger.info({ tag: ready.user.tag, id: botId }, 'Discord bot connected');
 
       try {
@@ -104,28 +103,28 @@ async function handleMessage(message: Message): Promise<void> {
   if (message.author.bot) return;
 
   const isDM = !message.guild;
+  const isThread = message.channel.isThread();
   const channelId = message.channelId;
   const jid = `dc:${channelId}`;
+  let targetJid = jid;
 
   // ── Build content ──
   let content = message.content;
+  let isMentioned = false;
   const senderName =
     message.member?.displayName || message.author.displayName || message.author.username;
   const sender = message.author.id;
   const timestamp = message.createdAt.toISOString();
 
-  // Translate @bot mentions → trigger format
+  // Remove the Discord mention before sending the prompt to pi.
   if (client?.user) {
-    const isMentioned =
+    isMentioned =
       message.mentions.users.has(botId) ||
       content.includes(`<@${botId}>`) ||
       content.includes(`<@!${botId}>`);
 
     if (isMentioned) {
       content = content.replace(new RegExp(`<@!?${botId}>`, 'g'), '').trim();
-      if (!triggerPattern.test(content)) {
-        content = `@${config.triggerName} ${content}`;
-      }
     }
   }
 
@@ -206,6 +205,7 @@ async function handleMessage(message: Message): Promise<void> {
       modelOverride: '',
       thinkingOverride: '',
       cwdOverride: '',
+      parentJid: '',
     };
     dbRegisterChannel(reg);
     channel = reg;
@@ -218,13 +218,20 @@ async function handleMessage(message: Message): Promise<void> {
   }
 
   // ── Trigger check ──
-  if (channel.requiresTrigger && !triggerPattern.test(content)) {
+  if (channel.requiresTrigger && !isMentioned) {
     logger.debug({ jid }, 'Message does not match trigger, ignoring');
     return;
   }
 
-  // Strip trigger prefix from content sent to agent
-  content = content.replace(triggerPattern, '').trim();
+  if (!isDM && !isThread && isMentioned) {
+    const threadChannel = await createMentionThread(message, channel, senderName);
+    if (!threadChannel) {
+      return;
+    }
+
+    targetJid = threadChannel.jid;
+  }
+
   if (!content && acceptedAttachments.length > 0) {
     content = buildAttachmentOnlyPrompt(acceptedAttachments.length);
   }
@@ -232,14 +239,65 @@ async function handleMessage(message: Message): Promise<void> {
 
   // ── Enqueue ──
   enqueueMessage({
-    channelJid: jid,
+    channelJid: targetJid,
     sender,
     senderName,
     content,
     timestamp,
     attachments: attachmentsJson,
   });
-  logger.info({ jid, sender: senderName, len: content.length }, 'Message enqueued');
+  logger.info({ jid: targetJid, sender: senderName, len: content.length }, 'Message enqueued');
+}
+
+async function createMentionThread(
+  message: Message,
+  parentChannel: RegisteredChannel,
+  senderName: string,
+): Promise<RegisteredChannel | undefined> {
+  if (!('threads' in message.channel)) {
+    logger.warn({ jid: parentChannel.jid }, 'Mentioned channel cannot create threads');
+    return undefined;
+  }
+
+  const parentJid = parentChannel.jid;
+  const thread = await (message.channel as TextChannel).threads.create({
+    name: buildMentionThreadName(senderName),
+    type: ChannelType.PrivateThread,
+    invitable: false,
+    autoArchiveDuration: 1440,
+    reason: 'piscord mention conversation',
+  });
+
+  try {
+    await thread.members.add(message.author.id);
+  } catch (err: any) {
+    logger.warn(
+      { err: err.message, threadId: thread.id, userId: message.author.id },
+      'Failed to add mentioning user to thread',
+    );
+    return undefined;
+  }
+
+  const threadChannel: RegisteredChannel = {
+    jid: `dc:${thread.id}`,
+    name: `${parentChannel.name} / ${thread.name}`,
+    folder: `thread_${thread.id}`,
+    requiresTrigger: false,
+    isMain: false,
+    modelOverride: parentChannel.modelOverride,
+    thinkingOverride: parentChannel.thinkingOverride,
+    cwdOverride: parentChannel.cwdOverride,
+    parentJid,
+  };
+
+  dbRegisterChannel(threadChannel);
+  logger.info({ parentJid, jid: threadChannel.jid }, 'Created mention thread channel');
+  return threadChannel;
+}
+
+function buildMentionThreadName(senderName: string): string {
+  const safeName = senderName.replace(/\s+/g, ' ').trim() || 'user';
+  return `pi-${safeName}`.slice(0, 100);
 }
 
 // ── Outbound ──
@@ -317,8 +375,4 @@ function splitMessage(text: string, max: number): string[] {
   }
   if (remaining) chunks.push(remaining);
   return chunks;
-}
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

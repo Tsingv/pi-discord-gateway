@@ -63,7 +63,6 @@ describe('buildConfigFile channel policy settings', () => {
     const { buildConfigFile } = await import('../src/cli/setup.js');
     const text = buildConfigFile({
       token: 'discord-token',
-      triggerName: 'PiBot',
       workingDir: '/workspace/project',
       channelPolicy: 'open-trigger',
       sessionsDir: '/var/lib/pi-discord/sessions',

@@ -20,11 +20,11 @@ const CONFIG_ENV_KEYS = [
   'PI_CWD',
   'PI_EXTRA_FLAGS',
   'PI_MODEL',
+  'PI_SPAWN_MODE',
   'PI_THINKING',
   'POLL_INTERVAL_MS',
   'SESSIONS_DIR',
   'SHUTDOWN_TIMEOUT_MS',
-  'TRIGGER_NAME',
 ];
 
 afterEach(() => {
@@ -137,6 +137,17 @@ describe('config loading', () => {
     const dataDir = expectedDefaultDataDir(homeDir);
     expect(config.dbPath).toBe(resolve(dataDir, 'gateway.db'));
     expect(config.sessionsDir).toBe(resolve(dataDir, 'sessions'));
+  });
+
+  it('parses pi spawn mode and falls back to direct for invalid values', async () => {
+    process.env.PI_SPAWN_MODE = 'zsh';
+
+    let loaded = await loadConfigModule();
+    expect(loaded.config.piSpawnMode).toBe('zsh');
+
+    process.env.PI_SPAWN_MODE = 'fish';
+    loaded = await loadConfigModule();
+    expect(loaded.config.piSpawnMode).toBe('direct');
   });
 });
 

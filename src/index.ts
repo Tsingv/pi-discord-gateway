@@ -88,7 +88,6 @@ export async function startGateway(): Promise<void> {
     logger.info(
       {
         bot: getBotTag(),
-        trigger: `@${config.triggerName}`,
         concurrency: config.maxConcurrency,
         scheduledConcurrency: config.maxScheduledConcurrency,
         sessionsDir: config.sessionsDir,

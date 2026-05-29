@@ -101,14 +101,25 @@ export async function invokeAgent(
   args.push('-p', userText);
 
   const { bin: effectiveBin, args: effectiveArgs } = resolvePiSpawn(config.piBin, args);
+  const { bin: spawnBin, args: spawnArgs } = applySpawnMode(
+    effectiveBin,
+    effectiveArgs,
+    config.piSpawnMode,
+  );
 
   logger.debug(
-    { bin: effectiveBin, args: effectiveArgs.slice(0, -1), channelFolder, cwd: effectiveCwd },
+    {
+      bin: spawnBin,
+      args: spawnArgs.slice(0, -1),
+      channelFolder,
+      cwd: effectiveCwd,
+      spawnMode: config.piSpawnMode,
+    },
     'Spawning pi',
   );
 
   return new Promise<AgentResult>((resolve, reject) => {
-    const proc = spawn(effectiveBin, effectiveArgs, {
+    const proc = spawn(spawnBin, spawnArgs, {
       cwd: effectiveCwd,
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -220,9 +231,10 @@ async function getSessionStatsViaRpc(
 ): Promise<{ tokens: SessionTokenUsage; contextUsage?: SessionContextUsage }> {
   const args = ['--mode', 'rpc', '--session', sessionFile];
   const { bin: rpcBin, args: rpcArgs } = resolvePiSpawn(config.piBin, args);
+  const { bin: spawnBin, args: spawnArgs } = applySpawnMode(rpcBin, rpcArgs, config.piSpawnMode);
 
   return new Promise((resolve, reject) => {
-    const proc = spawn(rpcBin, rpcArgs, {
+    const proc = spawn(spawnBin, spawnArgs, {
       cwd,
       env: process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -406,6 +418,33 @@ function resolvePiSpawn(piBin: string, args: string[]): { bin: string; args: str
   }
 
   return { bin: piBin, args };
+}
+
+function applySpawnMode(
+  bin: string,
+  args: string[],
+  mode: 'direct' | 'bash' | 'zsh',
+): { bin: string; args: string[] } {
+  if (mode === 'direct' || process.platform === 'win32') {
+    return { bin, args };
+  }
+
+  return {
+    bin: mode,
+    args: ['-lic', shellQuoteCommand([bin, ...args])],
+  };
+}
+
+function shellQuoteCommand(argv: string[]): string {
+  return argv.map(shellQuoteArg).join(' ');
+}
+
+function shellQuoteArg(value: string): string {
+  if (value === '') {
+    return "''";
+  }
+
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function toNumber(value: number | undefined): number {

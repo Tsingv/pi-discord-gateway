@@ -147,6 +147,7 @@ async function cliRegister(args: string[]): Promise<void> {
       modelOverride: existing?.modelOverride ?? '',
       thinkingOverride: existing?.thinkingOverride ?? '',
       cwdOverride: options.cwdOverride ?? existing?.cwdOverride ?? '',
+      parentJid: existing?.parentJid ?? '',
     };
 
     registerChannel(channel);
@@ -641,6 +642,7 @@ function formatChannelSummary(channel: RegisteredChannel): string {
     `cwd=${channel.cwdOverride || config.piCwd}${channel.cwdOverride ? ' (channel)' : ''}`,
     channel.modelOverride ? `model=${channel.modelOverride}` : '',
     channel.thinkingOverride ? `thinking=${channel.thinkingOverride}` : '',
+    channel.parentJid ? `parent=${channel.parentJid}` : '',
   ]
     .filter(Boolean)
     .join(' ');

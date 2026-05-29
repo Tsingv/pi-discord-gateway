@@ -12,6 +12,7 @@ export interface RegisteredChannel {
   modelOverride: string;
   thinkingOverride: ThinkingLevel | '';
   cwdOverride: string;
+  parentJid: string;
 }
 
 /** Queued message row from SQLite */

@@ -29,12 +29,13 @@ That's it. The setup wizard checks prerequisites, asks for your Discord bot toke
 - **[pi](https://github.com/badlogic/pi-mono)** ≥ 0.74.0 installed and on `PATH`, with login completed (`~/.pi/agent/auth.json`)
 - **Discord bot token** — [create one here](https://discord.com/developers/applications)
   - Enable **Message Content Intent** under Privileged Gateway Intents
-  - Bot permissions: `Send Messages`, `Read Message History`, `View Channels`, `Attach Files`
+  - Bot permissions: `Send Messages`, `Send Messages in Threads`, `Read Message History`, `View Channels`, `Attach Files`, `Create Private Threads`, `Manage Threads`
 
 ## Features
 
 - **Bridges to your existing `pi`** — shells out to the `pi` binary and reuses your login + model access
 - **Per-channel sessions** — each Discord channel gets its own persistent conversation history
+- **Mention threads** — when mentioned in a guild channel, the bot opens a private thread and binds that thread to its own pi session
 - **Per-channel working directories** — optionally override `PI_CWD` for specific channels without changing the global default
 - **Channel access policy** — `open` (all channels), `open-trigger` (all channels, @mention required), or `allowlist` (manual registration only)
 - **SQLite message queue** — survives crashes, auto-recovers stuck messages
@@ -79,6 +80,7 @@ During setup you pick one of three policies. This controls how the bot interacts
 | `allowlist`    | Only manually registered channels are active.                          |
 
 - DMs always auto-register when `AUTO_REGISTER_DMS=true` (the default).
+- In guild channels, mentioning the bot opens a private thread with the bot and the mentioning user. Follow-up replies in that thread continue the same pi session.
 - Use `EXCLUDED_CHANNELS` to block specific channels from auto-registration in `open` / `open-trigger` mode.
 
 If you chose `allowlist`, register channels manually:
@@ -193,28 +195,28 @@ Config file location depends on your OS (see Data Locations). On Linux: `~/.conf
 
 Most users won't need to edit this file directly — `piscord setup` generates it for you. If you do want to tweak advanced settings, you can edit the file manually, or ask your pi to configure it for you. Run `piscord status` to see the config path on your system.
 
-| Variable                     | Default                         | Description                                                                |
-| ---------------------------- | ------------------------------- | -------------------------------------------------------------------------- |
-| `DISCORD_BOT_TOKEN`          | _(required)_                    | Discord bot token                                                          |
-| `PI_BIN`                     | `pi`                            | Path to pi binary                                                          |
-| `PI_MODEL`                   | _(none)_                        | Default model override                                                     |
-| `PI_THINKING`                | _(none)_                        | Default thinking level                                                     |
-| `PI_CWD`                     | `$HOME`                         | Default working directory for pi; can be overridden per registered channel |
-| `PI_EXTRA_FLAGS`             | _(none)_                        | Extra flags passed to pi                                                   |
-| `TRIGGER_NAME`               | `pi`                            | Bot trigger name for @mentions                                             |
-| `CHANNEL_POLICY`             | `open`                          | Channel access: `open`, `open-trigger`, or `allowlist`                     |
-| `EXCLUDED_CHANNELS`          | _(none)_                        | Comma-separated channel IDs to exclude from auto-registration              |
-| `MAX_CONCURRENCY`            | `3`                             | Max parallel pi invocations                                                |
-| `MAX_SCHEDULED_CONCURRENCY`  | `1`                             | Max scheduled tasks enqueued per tick                                      |
-| `POLL_INTERVAL_MS`           | `1000`                          | Queue poll interval (ms)                                                   |
-| `SHUTDOWN_TIMEOUT_MS`        | `15000`                         | Graceful shutdown timeout (ms)                                             |
-| `AUTO_REGISTER_DMS`          | `true`                          | Auto-register DM channels                                                  |
-| `ARCHIVE_RETENTION_DAYS`     | `30`                            | Days to keep archived sessions (0 = never clean)                           |
-| `MAX_ATTACHMENT_BYTES`       | `26214400`                      | Max size per attachment (0 = no limit)                                     |
-| `MAX_TOTAL_ATTACHMENT_BYTES` | `52428800`                      | Max combined attachment size (0 = no limit)                                |
-| `SESSIONS_DIR`               | _(platform default)_/sessions   | Session storage directory (see Data Locations)                             |
-| `DB_PATH`                    | _(platform default)_/gateway.db | SQLite database path (see Data Locations)                                  |
-| `LOG_LEVEL`                  | `info`                          | Log level: debug/info/warn/error                                           |
+| Variable                     | Default                         | Description                                                                              |
+| ---------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------- |
+| `DISCORD_BOT_TOKEN`          | _(required)_                    | Discord bot token                                                                        |
+| `PI_BIN`                     | `pi`                            | Path to pi binary                                                                        |
+| `PI_SPAWN_MODE`              | `direct`                        | How to launch pi: `direct`, `bash`, or `zsh`; shell modes use an interactive login shell |
+| `PI_MODEL`                   | _(none)_                        | Default model override                                                                   |
+| `PI_THINKING`                | _(none)_                        | Default thinking level                                                                   |
+| `PI_CWD`                     | `$HOME`                         | Default working directory for pi; can be overridden per registered channel               |
+| `PI_EXTRA_FLAGS`             | _(none)_                        | Extra flags passed to pi                                                                 |
+| `CHANNEL_POLICY`             | `open`                          | Channel access: `open`, `open-trigger`, or `allowlist`                                   |
+| `EXCLUDED_CHANNELS`          | _(none)_                        | Comma-separated channel IDs to exclude from auto-registration                            |
+| `MAX_CONCURRENCY`            | `3`                             | Max parallel pi invocations                                                              |
+| `MAX_SCHEDULED_CONCURRENCY`  | `1`                             | Max scheduled tasks enqueued per tick                                                    |
+| `POLL_INTERVAL_MS`           | `1000`                          | Queue poll interval (ms)                                                                 |
+| `SHUTDOWN_TIMEOUT_MS`        | `15000`                         | Graceful shutdown timeout (ms)                                                           |
+| `AUTO_REGISTER_DMS`          | `true`                          | Auto-register DM channels                                                                |
+| `ARCHIVE_RETENTION_DAYS`     | `30`                            | Days to keep archived sessions (0 = never clean)                                         |
+| `MAX_ATTACHMENT_BYTES`       | `26214400`                      | Max size per attachment (0 = no limit)                                                   |
+| `MAX_TOTAL_ATTACHMENT_BYTES` | `52428800`                      | Max combined attachment size (0 = no limit)                                              |
+| `SESSIONS_DIR`               | _(platform default)_/sessions   | Session storage directory (see Data Locations)                                           |
+| `DB_PATH`                    | _(platform default)_/gateway.db | SQLite database path (see Data Locations)                                                |
+| `LOG_LEVEL`                  | `info`                          | Log level: debug/info/warn/error                                                         |
 
 After changing config, restart the service: `piscord daemon stop && piscord daemon start`
 
@@ -288,6 +290,7 @@ node dist/cli/index.js setup
 
 - Check `pi --version` works in the same shell
 - Set `PI_BIN=/full/path/to/pi` in config.env
+- If `pi` or its credentials are only available after your shell profile loads, set `PI_SPAWN_MODE=bash` or `PI_SPAWN_MODE=zsh`
 - Restart: `piscord daemon stop && piscord daemon start`
 </details>
 
@@ -314,7 +317,7 @@ node dist/cli/index.js setup
 
 - `open` policy: check `EXCLUDED_CHANNELS` doesn't include your channel
 - `allowlist` policy: run `piscord channels` — at least one channel must be registered
-- For trigger-only channels: mention the bot by name or use `@TriggerName`
+- For trigger-only channels: mention the Discord bot directly
 - DMs auto-register when `AUTO_REGISTER_DMS=true`
 </details>
 

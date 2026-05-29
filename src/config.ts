@@ -132,12 +132,25 @@ function parseChannelPolicy(value: string): ChannelPolicy {
   return 'allowlist';
 }
 
+const VALID_PI_SPAWN_MODES = ['direct', 'bash', 'zsh'] as const;
+type PiSpawnMode = (typeof VALID_PI_SPAWN_MODES)[number];
+
+function parsePiSpawnMode(value: string): PiSpawnMode {
+  if ((VALID_PI_SPAWN_MODES as readonly string[]).includes(value)) {
+    return value as PiSpawnMode;
+  }
+  return 'direct';
+}
+
 export const config = {
   /** Discord bot token (required) */
   discordToken: env('DISCORD_BOT_TOKEN'),
 
   /** Pi binary path */
   piBin: env('PI_BIN', 'pi'),
+
+  /** How to spawn pi: direct, bash, or zsh */
+  piSpawnMode: parsePiSpawnMode(env('PI_SPAWN_MODE', 'direct')),
 
   /** Default model for pi */
   piModel: env('PI_MODEL'),
@@ -153,9 +166,6 @@ export const config = {
 
   /** SQLite database path */
   dbPath: env('DB_PATH', resolve(DEFAULT_DATA_DIR, 'gateway.db')),
-
-  /** Bot trigger name (default: bot's own display name) */
-  triggerName: env('TRIGGER_NAME', 'pi'),
 
   /** Max concurrent agent invocations */
   maxConcurrency: envInt('MAX_CONCURRENCY', 3, { min: 1 }),

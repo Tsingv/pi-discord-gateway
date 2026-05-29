@@ -76,6 +76,7 @@ describe('channel cwd migration', () => {
         modelOverride: '',
         thinkingOverride: '',
         cwdOverride: '/workspace/project',
+        parentJid: '',
       });
       expect(db.getChannel('dc:123')?.cwdOverride).toBe('/workspace/project');
 
@@ -88,6 +89,7 @@ describe('channel cwd migration', () => {
         modelOverride: '',
         thinkingOverride: '',
         cwdOverride: '',
+        parentJid: '',
       });
       expect(db.getChannel('dc:123')).toMatchObject({
         name: 'legacy renamed',
